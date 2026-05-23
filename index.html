@@ -702,10 +702,10 @@ function startTimer(sec, onEnd) {
   timerId = setInterval(() => {
     timeLeft = Math.max(0, timeLeft - 0.1);
     renderTimer();
-    if (timeLeft <= 3 && !urgentPlayed) {
+    if (timeLeft <= 5 && !urgentPlayed) {
       urgentPlayed = true;
     }
-    if (timeLeft <= 3 && Math.round(timeLeft * 10) % 10 === 0) {
+    if (timeLeft <= 5 && Math.round(timeLeft * 10) % 10 === 0) {
       sfxTimerUrgent();
       vib(30);
     }
@@ -718,7 +718,7 @@ function renderTimer() {
   const fill = document.getElementById('timerFill');
   const num  = document.getElementById('timerNum');
   fill.style.width = pct + '%';
-  const urgent = pct < 30;
+  const urgent = pct < 50;
   fill.className = 'timer-fill' + (urgent ? ' urgent' : '');
   num.className  = 'timer-num'  + (urgent ? ' urgent' : '');
   num.textContent = Math.ceil(timeLeft);
@@ -748,48 +748,42 @@ function launchChallenge() {
 //  Math
 // ─────────────────────────────────────────────
 function setupMath() {
-  // Pick a random difficulty tier
   const tier = Math.random();
   let question, ans;
 
-  if (tier < 0.33) {
-    // 2-step: A × B + C or A × B − C
-    const a = ri(7, 15), b = ri(4, 9), c = ri(5, 30);
-    const sign = Math.random() < 0.5 ? '+' : '−';
-    ans = sign === '+' ? a * b + c : a * b - c;
-    question = `${a} × ${b} ${sign} ${c} = ?`;
-  } else if (tier < 0.66) {
-    // Division (always integer result)
-    const b = ri(4, 12);
-    const ans_ = ri(7, 15);
-    const a = b * ans_;
-    ans = ans_;
-    question = `${a} ÷ ${b} = ?`;
+  if (tier < 0.25) {
+    // 3-step: A × B + C × D
+    const a = ri(4, 9), b = ri(4, 9), c = ri(3, 8), d = ri(3, 8);
+    ans = a * b + c * d;
+    question = `${a}×${b} + ${c}×${d} = ?`;
+  } else if (tier < 0.5) {
+    // (A + B) × C
+    const a = ri(8, 25), b = ri(8, 25), c = ri(4, 9);
+    ans = (a + b) * c;
+    question = `(${a} + ${b}) × ${c} = ?`;
+  } else if (tier < 0.75) {
+    // 2桁 × 2桁
+    const a = ri(12, 30), b = ri(12, 30);
+    ans = a * b;
+    question = `${a} × ${b} = ?`;
   } else {
-    // Big multiply or big add/sub
-    const pick = Math.random();
-    if (pick < 0.4) {
-      const a = ri(13, 25), b = ri(13, 25);
-      ans = a * b; question = `${a} × ${b} = ?`;
-    } else if (pick < 0.7) {
-      const a = ri(100, 500), b = ri(100, 500);
-      ans = a + b; question = `${a} + ${b} = ?`;
-    } else {
-      const a = ri(200, 999), b = ri(50, a - 1);
-      ans = a - b; question = `${a} − ${b} = ?`;
-    }
+    // 3桁 ± 3桁 (紛らわしい数)
+    const a = ri(300, 900), b = ri(150, a - 50);
+    const sign = Math.random() < 0.5 ? '+' : '−';
+    ans = sign === '+' ? a + b : a - b;
+    question = `${a} ${sign} ${b} = ?`;
   }
 
   document.getElementById('challengeBox').innerHTML = `
-    <div class="ch-hint">制限時間以内に暗算して入力！</div>
-    <div class="math-eq" style="font-size:1.8rem;">${question}</div>
+    <div class="ch-hint">8秒以内に暗算！</div>
+    <div class="math-eq" style="font-size:1.7rem;line-height:1.3;">${question}</div>
     <input class="math-input" id="mathIn" type="number" inputmode="numeric" placeholder="答え">
     <button class="btn btn-primary" id="mathBtn" onclick="checkMath(${ans})">答える ✓</button>
   `;
   const input = document.getElementById('mathIn');
   input.focus();
   input.addEventListener('keydown', e => { if (e.key === 'Enter') checkMath(ans); });
-  startTimer(10, () => showResult(false, '時間切れ…'));
+  startTimer(8, () => showResult(false, '時間切れ…'));
 }
 
 function checkMath(ans) {
@@ -802,16 +796,14 @@ function checkMath(ans) {
 //  Sequence
 // ─────────────────────────────────────────────
 function setupSeq() {
-  const count = 9;
+  const count = 8;
   const positions = shuffle([...Array(16).keys()]).slice(0, count);
   let next = 1;
+  let tappable = false;
 
-  function render() {
-    document.getElementById('challengeBox').innerHTML = `
-      <div class="ch-hint">1 → 2 → … → ${count} の順にタップ！ミスで即失敗</div>
-      <div class="seq-grid" id="seqGrid"></div>
-    `;
+  function buildGrid(showNums) {
     const grid = document.getElementById('seqGrid');
+    grid.innerHTML = '';
     for (let i = 0; i < 16; i++) {
       const cell = document.createElement('div');
       const posIdx = positions.indexOf(i);
@@ -819,51 +811,81 @@ function setupSeq() {
         cell.className = 'seq-cell blank';
       } else {
         const num = posIdx + 1;
-        const done = num < next;
-        cell.className = 'seq-cell' + (done ? ' done' : '');
-        cell.textContent = done ? '✓' : num;
-        if (!done) cell.addEventListener('click', () => tap(num, cell));
+        if (showNums) {
+          cell.className = 'seq-cell';
+          cell.textContent = num;
+        } else {
+          const done = num < next;
+          cell.className = 'seq-cell' + (done ? ' done' : '');
+          cell.textContent = done ? '✓' : '';
+          if (!done) cell.addEventListener('click', () => tap(num, cell));
+        }
       }
       grid.appendChild(cell);
     }
   }
 
+  // Phase 1: show numbers with countdown
+  let countdown = 3;
+  document.getElementById('challengeBox').innerHTML = `
+    <div class="ch-hint" id="seqHint" style="font-size:1rem;font-weight:700;color:#f59e0b;">
+      👁 ${countdown}秒で覚えろ！
+    </div>
+    <div class="seq-grid" id="seqGrid"></div>
+  `;
+  buildGrid(true);
+
+  const cdTimer = setInterval(() => {
+    countdown--;
+    if (countdown > 0) {
+      document.getElementById('seqHint').textContent = `👁 ${countdown}秒で覚えろ！`;
+    } else {
+      clearInterval(cdTimer);
+      // Phase 2: hide and go
+      document.getElementById('seqHint').textContent = '🤔 1から順にタップ！ミスで即失敗';
+      document.getElementById('seqHint').style.color = '#e2e8f0';
+      tappable = true;
+      buildGrid(false);
+      startTimer(12, () => showResult(false, '時間切れ…'));
+    }
+  }, 1000);
+
   function tap(num, cell) {
+    if (!tappable) return;
     if (num === next) {
+      cell.className = 'seq-cell done';
+      cell.textContent = '✓';
+      cell.onclick = null;
       sfxTick(); vib(15);
       next++;
-      if (next > count) { stopTimer(); showResult(true); return; }
-      render();
+      if (next > count) { stopTimer(); showResult(true); }
     } else {
       cell.className = 'seq-cell bad';
       sfxFail(); vib([80, 50, 80]);
       flash('rgba(239,68,68,0.3)', 300);
-      setTimeout(() => { stopTimer(); showResult(false, '順番が違う！'); }, 500);
+      setTimeout(() => { stopTimer(); showResult(false, '違う！'); }, 400);
     }
   }
-
-  render();
-  startTimer(13, () => showResult(false, '時間切れ…'));
 }
 
 // ─────────────────────────────────────────────
 //  Reverse input
 // ─────────────────────────────────────────────
 function setupReverse() {
-  const digits = ri(4, 5);
+  const digits = ri(5, 6);
   const num = ri(10 ** (digits - 1), 10 ** digits - 1);
   const ans = num.toString().split('').reverse().join('');
 
   document.getElementById('challengeBox').innerHTML = `
     <div class="ch-hint">この数字を <strong>逆から</strong> 入力して！</div>
-    <div class="math-eq" style="letter-spacing:0.15em;">${num}</div>
+    <div class="math-eq" style="letter-spacing:0.2em;">${num}</div>
     <input class="math-input" id="revIn" type="number" inputmode="numeric" placeholder="逆から入力">
     <button class="btn btn-primary" onclick="checkReverse('${ans}')">答える ✓</button>
   `;
   const input = document.getElementById('revIn');
   input.focus();
   input.addEventListener('keydown', e => { if (e.key === 'Enter') checkReverse(ans); });
-  startTimer(9, () => showResult(false, '時間切れ…'));
+  startTimer(7, () => showResult(false, '時間切れ…'));
 }
 
 function checkReverse(ans) {
@@ -953,7 +975,7 @@ function setupQuiz() {
     });
   });
 
-  startTimer(12, () => showResult(false, '時間切れ…'));
+  startTimer(10, () => showResult(false, '時間切れ…'));
 }
 
 // ─────────────────────────────────────────────
