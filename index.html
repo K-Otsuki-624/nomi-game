@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="爆弾チャレンジ">
+  <title>💣 爆弾チャレンジ</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    :root {
+      --bg: #06060f;
+      --surface: #0d0d20;
+      --surface2: #13132a;
+      --border: #2a2a4a;
+      --accent: #7c3aed;
+      --accent2: #4f46e5;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warn: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #64748b;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      position: relative;
+    }
+
+    /* ── Flash overlay ── */
+    #flash {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 100;
+      opacity: 0;
+      transition: opacity 0.05s;
+    }
+
+    /* ── Confetti ── */
+    #confetti {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 99;
+      overflow: hidden;
+    }
+    .conf {
+      position: absolute;
+      top: -10px;
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      animation: fall linear forwards;
+    }
+    @keyframes fall {
+      to { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+    }
+
+    /* ── Screens ── */
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+      max-width: 400px;
+      animation: fadeIn 0.2s ease;
+    }
+    .screen.active { display: flex; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    /* ── Start ── */
+    .bomb-hero {
+      font-size: 6rem;
+      filter: drop-shadow(0 0 30px rgba(239,68,68,0.7));
+      animation: pulse-bomb 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse-bomb {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 20px rgba(239,68,68,0.5)); }
+      50% { transform: scale(1.08); filter: drop-shadow(0 0 40px rgba(239,68,68,0.9)); }
+    }
+
+    .logo {
+      font-size: 1.8rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .tagline {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%;
+      padding: 17px;
+      border: none;
+      border-radius: 14px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.12s, box-shadow 0.12s;
+    }
+    .btn::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,0.12);
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .btn:active { transform: scale(0.95); }
+    .btn:active::after { opacity: 1; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(124,58,237,0.4);
+    }
+    .btn-primary:active { box-shadow: 0 2px 8px rgba(124,58,237,0.3); }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(239,68,68,0.4);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border: 2px solid var(--border);
+      color: var(--muted);
+      font-size: 0.9rem;
+      padding: 13px;
+    }
+    .btn-ghost:active { background: var(--surface2); }
+
+    /* ── Game Screen ── */
+    .game-header {
+      text-align: center;
+    }
+    .game-header .rounds {
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .game-header .hint {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ── Grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+      width: 100%;
+    }
+
+    .cell {
+      aspect-ratio: 1;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s, background 0.2s;
+    }
+    .cell::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle at center, rgba(255,255,255,0.1), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .cell:active:not(.open):not(.exploded) {
+      transform: scale(0.86);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(124,58,237,0.4);
+    }
+    .cell:active:not(.open):not(.exploded)::before { opacity: 1; }
+
+    .cell.open {
+      background: #071a0c;
+      border-color: #15532e;
+      cursor: default;
+      box-shadow: inset 0 0 12px rgba(34,197,94,0.08);
+    }
+    .cell.open::after {
+      content: '✓';
+      color: var(--success);
+      font-size: 1.3rem;
+      font-weight: 800;
+    }
+
+    .cell.exploded {
+      background: #2a0808;
+      border-color: var(--danger);
+      cursor: default;
+      box-shadow: 0 0 20px rgba(239,68,68,0.6), inset 0 0 20px rgba(239,68,68,0.15);
+      animation: cellExplode 0.4s ease;
+    }
+    @keyframes cellExplode {
+      0%   { transform: scale(1); }
+      30%  { transform: scale(1.15); }
+      60%  { transform: scale(0.92); }
+      100% { transform: scale(1); }
+    }
+
+    /* ── Challenge Screen ── */
+    .challenge-header {
+      text-align: center;
+    }
+    .challenge-label {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--warn);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .challenge-type {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 2px;
+      letter-spacing: 0.05em;
+    }
+
+    /* Timer */
+    .timer-wrap { width: 100%; }
+    .timer-track {
+      height: 8px;
+      background: var(--surface2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .timer-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--warn), #fde68a);
+      transition: width 0.1s linear;
+    }
+    .timer-fill.urgent {
+      background: linear-gradient(90deg, var(--danger), #fca5a5);
+      animation: pulse-bar 0.4s ease-in-out infinite alternate;
+    }
+    @keyframes pulse-bar {
+      from { opacity: 1; } to { opacity: 0.6; }
+    }
+    .timer-num {
+      text-align: center;
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: var(--warn);
+      font-variant-numeric: tabular-nums;
+      transition: color 0.3s;
+    }
+    .timer-num.urgent { color: var(--danger); }
+
+    /* Challenge box */
+    .challenge-box {
+      width: 100%;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 18px;
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .ch-hint { font-size: 0.82rem; color: var(--muted); text-align: center; }
+
+    /* Math */
+    .math-eq {
+      font-size: 2.4rem;
+      font-weight: 900;
+      text-align: center;
+      letter-spacing: 0.04em;
+    }
+    .math-input {
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 2rem;
+      font-weight: 700;
+      padding: 12px;
+      width: 100%;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .math-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,58,237,0.2); }
+
+    /* Quiz */
+    .quiz-q {
+      font-size: 1.2rem;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.55;
+    }
+    .choices {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      width: 100%;
+    }
+    .choice {
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 16px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: transform 0.1s, border-color 0.2s, background 0.2s;
+    }
+    .choice:active { transform: scale(0.94); }
+    .choice.correct { border-color: var(--success); background: #052e16; color: #4ade80; }
+    .choice.wrong   { border-color: var(--danger);  background: #2a0808; color: #fca5a5; }
+
+    /* Sequence */
+    .seq-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      width: 100%;
+    }
+    .seq-cell {
+      aspect-ratio: 1;
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.1s, border-color 0.2s, background 0.2s;
+    }
+    .seq-cell:active:not(.done):not(.blank) { transform: scale(0.88); }
+    .seq-cell.done { background: #052e16; border-color: var(--success); color: #4ade80; font-size: 1rem; }
+    .seq-cell.bad  { background: #2a0808; border-color: var(--danger);  color: #fca5a5; animation: shake 0.3s ease; }
+    .seq-cell.blank { border-color: transparent; background: transparent; cursor: default; }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%  { transform: translateX(-8px); }
+      40%  { transform: translateX(8px); }
+      60%  { transform: translateX(-6px); }
+      80%  { transform: translateX(6px); }
+    }
+
+    /* ── Result Screen ── */
+    .result-icon {
+      font-size: 7rem;
+      filter: drop-shadow(0 0 20px rgba(255,255,255,0.3));
+      animation: pop 0.45s cubic-bezier(.36,1.56,.64,1);
+    }
+    @keyframes pop {
+      from { transform: scale(0.3); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
+    .result-title {
+      font-size: 2rem;
+      font-weight: 900;
+      text-align: center;
+      letter-spacing: 0.03em;
+    }
+    .result-sub {
+      font-size: 1rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    /* ── Screen shake ── */
+    @keyframes screenShake {
+      0%, 100% { transform: translateX(0); }
+      15%  { transform: translateX(-12px) rotate(-1deg); }
+      30%  { transform: translateX(12px)  rotate(1deg); }
+      45%  { transform: translateX(-8px); }
+      60%  { transform: translateX(8px); }
+      75%  { transform: translateX(-4px); }
+    }
+    body.shaking { animation: screenShake 0.5s ease; }
+  </style>
+</head>
+<body>
+
+<div id="flash"></div>
+<div id="confetti"></div>
+
+<!-- ── Start ── -->
+<div class="screen active" id="startScreen">
+  <div class="bomb-hero">💣</div>
+  <div class="logo">爆弾チャレンジ</div>
+  <div class="tagline">
+    16マスのどこかに爆弾が潜んでいる。<br>
+    爆弾を引いたらチャレンジ開始！<br>
+    成功すれば飲まなくてOK🍺
+  </div>
+  <button class="btn btn-danger" onclick="startGame()">💣 ゲームスタート</button>
+</div>
+
+<!-- ── Game ── -->
+<div class="screen" id="gameScreen">
+  <div class="game-header">
+    <div class="rounds" id="roundLabel">ROUND 1</div>
+    <div class="hint">どこかに 💣 が1つ隠れている</div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <button class="btn btn-ghost" onclick="goStart()">タイトルへ戻る</button>
+</div>
+
+<!-- ── Challenge ── -->
+<div class="screen" id="challengeScreen">
+  <div class="challenge-header">
+    <div class="challenge-label">⚡ チャレンジ！</div>
+    <div class="challenge-type" id="challengeTypeLabel"></div>
+  </div>
+  <div class="timer-wrap">
+    <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+    <div class="timer-num" id="timerNum">10</div>
+  </div>
+  <div class="challenge-box" id="challengeBox"></div>
+</div>
+
+<!-- ── Result ── -->
+<div class="screen" id="resultScreen">
+  <div class="result-icon"  id="resultIcon"></div>
+  <div class="result-title" id="resultTitle"></div>
+  <div class="result-sub"   id="resultSub"></div>
+  <button class="btn btn-primary" onclick="nextRound()">次のラウンドへ 🎮</button>
+  <button class="btn btn-ghost"   onclick="goStart()">タイトルへ戻る</button>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  Audio (Web Audio API – no external files)
+// ─────────────────────────────────────────────
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, type, dur, vol = 0.3, delay = 0) {
+  try {
+    const ctx = getAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+    gain.gain.setValueAtTime(vol, ctx.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + dur);
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + dur);
+  } catch (_) {}
+}
+
+function sfxTick() { playTone(600, 'sine', 0.06, 0.15); }
+
+function sfxBomb() {
+  playTone(120, 'sawtooth', 0.5, 0.4);
+  playTone(80,  'square',   0.4, 0.3, 0.1);
+  playTone(60,  'sawtooth', 0.6, 0.5, 0.2);
+}
+
+function sfxSuccess() {
+  [523, 659, 784, 1047].forEach((f, i) => playTone(f, 'sine', 0.25, 0.3, i * 0.1));
+}
+
+function sfxFail() {
+  [400, 300, 200].forEach((f, i) => playTone(f, 'sawtooth', 0.2, 0.4, i * 0.1));
+}
+
+function sfxTimerUrgent() { playTone(880, 'square', 0.08, 0.1); }
+
+// ─────────────────────────────────────────────
+//  Haptic
+// ─────────────────────────────────────────────
+function vib(pattern) {
+  try { navigator.vibrate && navigator.vibrate(pattern); } catch (_) {}
+}
+
+// ─────────────────────────────────────────────
+//  State
+// ─────────────────────────────────────────────
+let bombIdx = -1;
+let opened  = new Set();
+let round   = 0;
+let timerId = null;
+let timeLeft = 0;
+let totalTime = 0;
+let urgentPlayed = false;
+
+// ─────────────────────────────────────────────
+//  Navigation
+// ─────────────────────────────────────────────
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function goStart() {
+  stopTimer();
+  round = 0;
+  show('startScreen');
+}
+
+// ─────────────────────────────────────────────
+//  Flash / Effects
+// ─────────────────────────────────────────────
+function flash(color, dur = 250) {
+  const el = document.getElementById('flash');
+  el.style.background = color;
+  el.style.opacity = '0.55';
+  setTimeout(() => { el.style.opacity = '0'; }, dur);
+}
+
+function shakeScreen() {
+  document.body.classList.add('shaking');
+  setTimeout(() => document.body.classList.remove('shaking'), 500);
+}
+
+function launchConfetti() {
+  const wrap = document.getElementById('confetti');
+  wrap.innerHTML = '';
+  const colors = ['#f59e0b','#22c55e','#3b82f6','#ec4899','#a855f7','#ef4444'];
+  for (let i = 0; i < 60; i++) {
+    const el = document.createElement('div');
+    el.className = 'conf';
+    el.style.left = Math.random() * 100 + 'vw';
+    el.style.width  = (6 + Math.random() * 8) + 'px';
+    el.style.height = (6 + Math.random() * 8) + 'px';
+    el.style.background = colors[Math.floor(Math.random() * colors.length)];
+    el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+    const dur = 1.2 + Math.random() * 1.5;
+    el.style.animationDuration = dur + 's';
+    el.style.animationDelay = Math.random() * 0.5 + 's';
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), (dur + 0.5) * 1000);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Game
+// ─────────────────────────────────────────────
+function startGame() {
+  round = 0;
+  newRound();
+}
+
+function newRound() {
+  round++;
+  opened = new Set();
+  bombIdx = Math.floor(Math.random() * 16);
+  document.getElementById('roundLabel').textContent = `ROUND ${round}`;
+  renderGrid();
+  show('gameScreen');
+}
+
+function nextRound() { newRound(); }
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < 16; i++) {
+    const cell = document.createElement('div');
+    if (opened.has(i)) {
+      cell.className = 'cell open';
+    } else {
+      cell.className = 'cell';
+      cell.addEventListener('click', () => tapCell(i));
+    }
+    grid.appendChild(cell);
+  }
+}
+
+function tapCell(i) {
+  if (opened.has(i)) return;
+  getAudio(); // unlock audio context on user gesture
+
+  opened.add(i);
+
+  if (i === bombIdx) {
+    const cells = document.getElementById('grid').children;
+    cells[i].className = 'cell exploded';
+    cells[i].textContent = '💣';
+    sfxBomb();
+    vib([50, 80, 200]);
+    flash('rgba(239,68,68,0.4)', 400);
+    shakeScreen();
+    setTimeout(launchChallenge, 800);
+  } else {
+    sfxTick();
+    vib(10);
+    renderGrid();
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Timer
+// ─────────────────────────────────────────────
+function stopTimer() {
+  if (timerId) { clearInterval(timerId); timerId = null; }
+}
+
+function startTimer(sec, onEnd) {
+  stopTimer();
+  totalTime = sec;
+  timeLeft = sec;
+  urgentPlayed = false;
+  renderTimer();
+
+  timerId = setInterval(() => {
+    timeLeft = Math.max(0, timeLeft - 0.1);
+    renderTimer();
+    if (timeLeft <= 3 && !urgentPlayed) {
+      urgentPlayed = true;
+    }
+    if (timeLeft <= 3 && Math.round(timeLeft * 10) % 10 === 0) {
+      sfxTimerUrgent();
+      vib(30);
+    }
+    if (timeLeft === 0) { stopTimer(); onEnd(); }
+  }, 100);
+}
+
+function renderTimer() {
+  const pct = (timeLeft / totalTime) * 100;
+  const fill = document.getElementById('timerFill');
+  const num  = document.getElementById('timerNum');
+  fill.style.width = pct + '%';
+  const urgent = pct < 30;
+  fill.className = 'timer-fill' + (urgent ? ' urgent' : '');
+  num.className  = 'timer-num'  + (urgent ? ' urgent' : '');
+  num.textContent = Math.ceil(timeLeft);
+}
+
+// ─────────────────────────────────────────────
+//  Challenge dispatcher
+// ─────────────────────────────────────────────
+const TYPES = [
+  { id: 'math', label: '🧮 暗算チャレンジ' },
+  { id: 'seq',  label: '👆 順番タップチャレンジ' },
+  { id: 'quiz', label: '📚 クイズチャレンジ' },
+];
+
+function launchChallenge() {
+  show('challengeScreen');
+  const t = TYPES[Math.floor(Math.random() * TYPES.length)];
+  document.getElementById('challengeTypeLabel').textContent = t.label;
+  if (t.id === 'math') setupMath();
+  else if (t.id === 'seq') setupSeq();
+  else setupQuiz();
+}
+
+// ─────────────────────────────────────────────
+//  Math
+// ─────────────────────────────────────────────
+function setupMath() {
+  const ops = [
+    { sym: '+',  fn: (a, b) => a + b },
+    { sym: '−',  fn: (a, b) => a - b },
+    { sym: '×',  fn: (a, b) => a * b },
+  ];
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let a, b;
+  if (op.sym === '+') { a = ri(10, 59); b = ri(10, 59); }
+  else if (op.sym === '−') { a = ri(30, 99); b = ri(5, a - 1); }
+  else { a = ri(2, 12); b = ri(2, 12); }
+  const ans = op.fn(a, b);
+
+  document.getElementById('challengeBox').innerHTML = `
+    <div class="ch-hint">制限時間以内に暗算して入力！</div>
+    <div class="math-eq">${a} ${op.sym} ${b} = ?</div>
+    <input class="math-input" id="mathIn" type="number" inputmode="numeric" placeholder="答え">
+    <button class="btn btn-primary" id="mathBtn" onclick="checkMath(${ans})">答える ✓</button>
+  `;
+  const input = document.getElementById('mathIn');
+  input.focus();
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') checkMath(ans); });
+  startTimer(12, () => showResult(false, '時間切れ…'));
+}
+
+function checkMath(ans) {
+  const val = parseInt(document.getElementById('mathIn').value, 10);
+  stopTimer();
+  showResult(val === ans, val === ans ? null : `正解は ${ans} でした`);
+}
+
+// ─────────────────────────────────────────────
+//  Sequence
+// ─────────────────────────────────────────────
+function setupSeq() {
+  const count = 6;
+  const positions = shuffle([...Array(16).keys()]).slice(0, count);
+  let next = 1;
+
+  function render() {
+    document.getElementById('challengeBox').innerHTML = `
+      <div class="ch-hint">1 → 2 → 3 … の順にタップ！</div>
+      <div class="seq-grid" id="seqGrid"></div>
+    `;
+    const grid = document.getElementById('seqGrid');
+    for (let i = 0; i < 16; i++) {
+      const cell = document.createElement('div');
+      const posIdx = positions.indexOf(i);
+      if (posIdx === -1) {
+        cell.className = 'seq-cell blank';
+      } else {
+        const num = posIdx + 1;
+        const done = num < next;
+        cell.className = 'seq-cell' + (done ? ' done' : '');
+        cell.textContent = done ? '✓' : num;
+        if (!done) cell.addEventListener('click', () => tap(num, cell));
+      }
+      grid.appendChild(cell);
+    }
+  }
+
+  function tap(num, cell) {
+    if (num === next) {
+      sfxTick(); vib(15);
+      next++;
+      if (next > count) { stopTimer(); showResult(true); return; }
+      render();
+    } else {
+      cell.className = 'seq-cell bad';
+      sfxFail(); vib([80, 50, 80]);
+      flash('rgba(239,68,68,0.3)', 300);
+      setTimeout(() => { stopTimer(); showResult(false, '順番が違う！'); }, 500);
+    }
+  }
+
+  render();
+  startTimer(15, () => showResult(false, '時間切れ…'));
+}
+
+// ─────────────────────────────────────────────
+//  Quiz
+// ─────────────────────────────────────────────
+// correct answer is always choices[0]; shuffled before display
+const QUIZZES = [
+  { q: '日本で一番高い山は？',           choices: ['富士山',    '北岳',     '奥穂高岳',   '槍ヶ岳'] },
+  { q: '1週間は何日？',                 choices: ['7日',       '6日',      '8日',        '5日'] },
+  { q: '虹は何色？',                    choices: ['7色',       '5色',      '6色',        '8色'] },
+  { q: '水が沸騰する温度は？',            choices: ['100℃',     '80℃',     '120℃',      '90℃'] },
+  { q: 'ピカチュウのタイプは？',          choices: ['でんき',   'みず',     'ほのお',      'くさ'] },
+  { q: 'サッカーW杯は何年ごと？',         choices: ['4年',      '2年',      '3年',        '5年'] },
+  { q: '世界一人口が多い国は？(2025年)',  choices: ['インド',   '中国',     'アメリカ',    'ロシア'] },
+  { q: '漢字「森」に木は何本？',          choices: ['3本',      '2本',      '4本',        '1本'] },
+  { q: '人間の体の水分量は約？',          choices: ['60%',      '40%',      '80%',        '30%'] },
+  { q: 'ビールの主な原料は？',            choices: ['大麦麦芽', '米',       '小麦',       'トウモロコシ'] },
+  { q: '月は地球から約何万km？',          choices: ['38万km',   '15万km',   '100万km',    '50万km'] },
+  { q: 'π(パイ)の近似値は？',           choices: ['3.14',     '2.72',     '1.41',       '3.16'] },
+  { q: '将棋の駒は何種類？',             choices: ['8種類',    '6種類',    '10種類',     '12種類'] },
+  { q: '味覚の基本は何種類？',            choices: ['5種類',    '4種類',    '3種類',      '6種類'] },
+  { q: '赤ちゃんの骨の数は大人より？',    choices: ['多い',     '少ない',   '同じ',       '2倍'] },
+  { q: '日本の国旗の色は？',             choices: ['白と赤',   '赤と青',   '白のみ',     '赤のみ'] },
+  { q: 'アルコール度数が最も高いのは？',   choices: ['ウォッカ', 'ビール',   '日本酒',     'ワイン'] },
+  { q: '1オクターブは何音？',            choices: ['8音',      '7音',      '12音',       '5音'] },
+  { q: '富士山があるのは？',             choices: ['静岡・山梨','長野・静岡','山梨のみ',   '静岡のみ'] },
+  { q: '地球から一番近い恒星は？',        choices: ['太陽',     '北極星',   'シリウス',   'ベガ'] },
+  { q: '三角形の内角の和は？',           choices: ['180°',    '360°',    '90°',        '270°'] },
+  { q: 'DNA の塩基は何種類？',           choices: ['4種類',    '3種類',    '5種類',      '6種類'] },
+  { q: '光の速さは約？',                 choices: ['30万km/s', '3万km/s',  '300万km/s',  '3000km/s'] },
+  { q: '日本の都道府県は何個？',          choices: ['47',       '46',       '48',         '50'] },
+];
+
+function setupQuiz() {
+  const q = QUIZZES[Math.floor(Math.random() * QUIZZES.length)];
+  const shuffled = shuffle(q.choices.map((text, i) => ({ text, correct: i === 0 })));
+
+  document.getElementById('challengeBox').innerHTML = `
+    <div class="quiz-q">${q.q}</div>
+    <div class="choices">
+      ${shuffled.map(c => `<div class="choice" data-correct="${c.correct}">${c.text}</div>`).join('')}
+    </div>
+  `;
+
+  document.querySelectorAll('.choice').forEach(el => {
+    el.addEventListener('click', () => {
+      stopTimer();
+      document.querySelectorAll('.choice').forEach(c => c.style.pointerEvents = 'none');
+      const correct = el.dataset.correct === 'true';
+      el.classList.add(correct ? 'correct' : 'wrong');
+      if (!correct) {
+        document.querySelectorAll('.choice').forEach(c => {
+          if (c.dataset.correct === 'true') c.classList.add('correct');
+        });
+      }
+      setTimeout(() => showResult(correct, correct ? null : '不正解！'), 750);
+    });
+  });
+
+  startTimer(12, () => showResult(false, '時間切れ…'));
+}
+
+// ─────────────────────────────────────────────
+//  Result
+// ─────────────────────────────────────────────
+function showResult(success, detail) {
+  stopTimer();
+  show('resultScreen');
+
+  if (success) {
+    sfxSuccess();
+    vib([30, 30, 60]);
+    flash('rgba(34,197,94,0.35)', 400);
+    launchConfetti();
+    document.getElementById('resultIcon').textContent  = '🎉';
+    document.getElementById('resultTitle').textContent = 'チャレンジ成功！';
+    document.getElementById('resultTitle').style.color = '#4ade80';
+    document.getElementById('resultSub').textContent   = detail || '飲まなくてOK！';
+  } else {
+    sfxFail();
+    vib([100, 50, 100, 50, 200]);
+    flash('rgba(239,68,68,0.45)', 500);
+    shakeScreen();
+    document.getElementById('resultIcon').textContent  = '🍺';
+    document.getElementById('resultTitle').textContent = 'チャレンジ失敗…';
+    document.getElementById('resultTitle').style.color = '#ef4444';
+    document.getElementById('resultSub').textContent   = detail ? `${detail}　飲んで！` : '飲んで！🍺';
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Utils
+// ─────────────────────────────────────────────
+function ri(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+</script>
+</body>
+</html>
