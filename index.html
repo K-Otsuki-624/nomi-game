@@ -474,38 +474,93 @@ function getAudio() {
   return audioCtx;
 }
 
-function playTone(freq, type, dur, vol = 0.3, delay = 0) {
+function osc(ctx, freq, type, t0, t1, vol, freqEnd) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.connect(g); g.connect(ctx.destination);
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t0);
+  if (freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, t1);
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t1);
+  o.start(t0); o.stop(t1 + 0.01);
+}
+
+function noise(ctx, t0, dur, filterFreq, filterQ, vol) {
   try {
-    const ctx = getAudio();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
-    gain.gain.setValueAtTime(vol, ctx.currentTime + delay);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + dur);
-    osc.start(ctx.currentTime + delay);
-    osc.stop(ctx.currentTime + delay + dur);
+    const n = Math.ceil(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const flt = ctx.createBiquadFilter();
+    flt.type = 'bandpass';
+    flt.frequency.value = filterFreq;
+    flt.Q.value = filterQ;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    src.connect(flt); flt.connect(g); g.connect(ctx.destination);
+    src.start(t0); src.stop(t0 + dur);
   } catch (_) {}
 }
 
-function sfxTick() { playTone(600, 'sine', 0.06, 0.15); }
+function sfxTick() {
+  try {
+    const ctx = getAudio(); const t = ctx.currentTime;
+    noise(ctx, t, 0.04, 3000, 0.8, 0.3);
+    osc(ctx, 900, 'sine', t, t + 0.03, 0.12, 400);
+  } catch (_) {}
+}
 
 function sfxBomb() {
-  playTone(120, 'sawtooth', 0.5, 0.4);
-  playTone(80,  'square',   0.4, 0.3, 0.1);
-  playTone(60,  'sawtooth', 0.6, 0.5, 0.2);
+  try {
+    const ctx = getAudio(); const t = ctx.currentTime;
+    // ドーン - white noise burst
+    noise(ctx, t, 0.6, 200, 0.5, 1.2);
+    noise(ctx, t, 0.3, 800, 1.0, 0.5);
+    // 低音ドロップ
+    osc(ctx, 120, 'sawtooth', t, t + 0.6, 0.6, 20);
+    osc(ctx, 60,  'square',   t + 0.05, t + 0.5, 0.4, 15);
+    // 高音バン
+    osc(ctx, 2000, 'sine', t, t + 0.12, 0.3, 100);
+  } catch (_) {}
 }
 
 function sfxSuccess() {
-  [523, 659, 784, 1047].forEach((f, i) => playTone(f, 'sine', 0.25, 0.3, i * 0.1));
+  try {
+    const ctx = getAudio(); const t = ctx.currentTime;
+    // ファンファーレ arpeggio
+    [[523,0],[659,0.1],[784,0.2],[1047,0.3],[1319,0.4],[1047,0.5]].forEach(([f,d]) => {
+      osc(ctx, f, 'sine',     t+d, t+d+0.3, 0.25);
+      osc(ctx, f, 'triangle', t+d, t+d+0.3, 0.08);
+    });
+    // スパークル
+    [2093,2637,3136].forEach((f,i) => osc(ctx, f, 'sine', t+0.5+i*0.06, t+0.65+i*0.06, 0.08));
+  } catch (_) {}
 }
 
 function sfxFail() {
-  [400, 300, 200].forEach((f, i) => playTone(f, 'sawtooth', 0.2, 0.4, i * 0.1));
+  try {
+    const ctx = getAudio(); const t = ctx.currentTime;
+    // 悲しいトロンボーン wah wah
+    [[400,0],[350,0.13],[280,0.26],[220,0.39],[180,0.52]].forEach(([f,d]) => {
+      osc(ctx, f, 'sawtooth', t+d, t+d+0.18, 0.35);
+      osc(ctx, f*1.5, 'sine', t+d, t+d+0.18, 0.08);
+    });
+    // 低音どーん
+    osc(ctx, 80, 'triangle', t+0.3, t+0.9, 0.3, 40);
+  } catch (_) {}
 }
 
-function sfxTimerUrgent() { playTone(880, 'square', 0.08, 0.1); }
+function sfxTimerUrgent() {
+  try {
+    const ctx = getAudio(); const t = ctx.currentTime;
+    noise(ctx, t, 0.04, 2000, 2, 0.2);
+    osc(ctx, 1200, 'square', t, t+0.04, 0.08, 800);
+  } catch (_) {}
+}
 
 // ─────────────────────────────────────────────
 //  Haptic
@@ -673,9 +728,10 @@ function renderTimer() {
 //  Challenge dispatcher
 // ─────────────────────────────────────────────
 const TYPES = [
-  { id: 'math', label: '🧮 暗算チャレンジ' },
-  { id: 'seq',  label: '👆 順番タップチャレンジ' },
-  { id: 'quiz', label: '📚 クイズチャレンジ' },
+  { id: 'math',    label: '🧮 暗算チャレンジ' },
+  { id: 'seq',     label: '👆 順番タップチャレンジ' },
+  { id: 'quiz',    label: '📚 クイズチャレンジ' },
+  { id: 'reverse', label: '🔄 逆さ入力チャレンジ' },
 ];
 
 function launchChallenge() {
@@ -684,6 +740,7 @@ function launchChallenge() {
   document.getElementById('challengeTypeLabel').textContent = t.label;
   if (t.id === 'math') setupMath();
   else if (t.id === 'seq') setupSeq();
+  else if (t.id === 'reverse') setupReverse();
   else setupQuiz();
 }
 
@@ -691,28 +748,48 @@ function launchChallenge() {
 //  Math
 // ─────────────────────────────────────────────
 function setupMath() {
-  const ops = [
-    { sym: '+',  fn: (a, b) => a + b },
-    { sym: '−',  fn: (a, b) => a - b },
-    { sym: '×',  fn: (a, b) => a * b },
-  ];
-  const op = ops[Math.floor(Math.random() * ops.length)];
-  let a, b;
-  if (op.sym === '+') { a = ri(10, 59); b = ri(10, 59); }
-  else if (op.sym === '−') { a = ri(30, 99); b = ri(5, a - 1); }
-  else { a = ri(2, 12); b = ri(2, 12); }
-  const ans = op.fn(a, b);
+  // Pick a random difficulty tier
+  const tier = Math.random();
+  let question, ans;
+
+  if (tier < 0.33) {
+    // 2-step: A × B + C or A × B − C
+    const a = ri(7, 15), b = ri(4, 9), c = ri(5, 30);
+    const sign = Math.random() < 0.5 ? '+' : '−';
+    ans = sign === '+' ? a * b + c : a * b - c;
+    question = `${a} × ${b} ${sign} ${c} = ?`;
+  } else if (tier < 0.66) {
+    // Division (always integer result)
+    const b = ri(4, 12);
+    const ans_ = ri(7, 15);
+    const a = b * ans_;
+    ans = ans_;
+    question = `${a} ÷ ${b} = ?`;
+  } else {
+    // Big multiply or big add/sub
+    const pick = Math.random();
+    if (pick < 0.4) {
+      const a = ri(13, 25), b = ri(13, 25);
+      ans = a * b; question = `${a} × ${b} = ?`;
+    } else if (pick < 0.7) {
+      const a = ri(100, 500), b = ri(100, 500);
+      ans = a + b; question = `${a} + ${b} = ?`;
+    } else {
+      const a = ri(200, 999), b = ri(50, a - 1);
+      ans = a - b; question = `${a} − ${b} = ?`;
+    }
+  }
 
   document.getElementById('challengeBox').innerHTML = `
     <div class="ch-hint">制限時間以内に暗算して入力！</div>
-    <div class="math-eq">${a} ${op.sym} ${b} = ?</div>
+    <div class="math-eq" style="font-size:1.8rem;">${question}</div>
     <input class="math-input" id="mathIn" type="number" inputmode="numeric" placeholder="答え">
     <button class="btn btn-primary" id="mathBtn" onclick="checkMath(${ans})">答える ✓</button>
   `;
   const input = document.getElementById('mathIn');
   input.focus();
   input.addEventListener('keydown', e => { if (e.key === 'Enter') checkMath(ans); });
-  startTimer(12, () => showResult(false, '時間切れ…'));
+  startTimer(10, () => showResult(false, '時間切れ…'));
 }
 
 function checkMath(ans) {
@@ -725,13 +802,13 @@ function checkMath(ans) {
 //  Sequence
 // ─────────────────────────────────────────────
 function setupSeq() {
-  const count = 6;
+  const count = 9;
   const positions = shuffle([...Array(16).keys()]).slice(0, count);
   let next = 1;
 
   function render() {
     document.getElementById('challengeBox').innerHTML = `
-      <div class="ch-hint">1 → 2 → 3 … の順にタップ！</div>
+      <div class="ch-hint">1 → 2 → … → ${count} の順にタップ！ミスで即失敗</div>
       <div class="seq-grid" id="seqGrid"></div>
     `;
     const grid = document.getElementById('seqGrid');
@@ -766,7 +843,33 @@ function setupSeq() {
   }
 
   render();
-  startTimer(15, () => showResult(false, '時間切れ…'));
+  startTimer(13, () => showResult(false, '時間切れ…'));
+}
+
+// ─────────────────────────────────────────────
+//  Reverse input
+// ─────────────────────────────────────────────
+function setupReverse() {
+  const digits = ri(4, 5);
+  const num = ri(10 ** (digits - 1), 10 ** digits - 1);
+  const ans = num.toString().split('').reverse().join('');
+
+  document.getElementById('challengeBox').innerHTML = `
+    <div class="ch-hint">この数字を <strong>逆から</strong> 入力して！</div>
+    <div class="math-eq" style="letter-spacing:0.15em;">${num}</div>
+    <input class="math-input" id="revIn" type="number" inputmode="numeric" placeholder="逆から入力">
+    <button class="btn btn-primary" onclick="checkReverse('${ans}')">答える ✓</button>
+  `;
+  const input = document.getElementById('revIn');
+  input.focus();
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') checkReverse(ans); });
+  startTimer(9, () => showResult(false, '時間切れ…'));
+}
+
+function checkReverse(ans) {
+  const val = document.getElementById('revIn').value.trim();
+  stopTimer();
+  showResult(val === ans, val === ans ? null : `正解は ${ans} でした`);
 }
 
 // ─────────────────────────────────────────────
@@ -774,30 +877,54 @@ function setupSeq() {
 // ─────────────────────────────────────────────
 // correct answer is always choices[0]; shuffled before display
 const QUIZZES = [
-  { q: '日本で一番高い山は？',           choices: ['富士山',    '北岳',     '奥穂高岳',   '槍ヶ岳'] },
-  { q: '1週間は何日？',                 choices: ['7日',       '6日',      '8日',        '5日'] },
-  { q: '虹は何色？',                    choices: ['7色',       '5色',      '6色',        '8色'] },
-  { q: '水が沸騰する温度は？',            choices: ['100℃',     '80℃',     '120℃',      '90℃'] },
-  { q: 'ピカチュウのタイプは？',          choices: ['でんき',   'みず',     'ほのお',      'くさ'] },
-  { q: 'サッカーW杯は何年ごと？',         choices: ['4年',      '2年',      '3年',        '5年'] },
-  { q: '世界一人口が多い国は？(2025年)',  choices: ['インド',   '中国',     'アメリカ',    'ロシア'] },
-  { q: '漢字「森」に木は何本？',          choices: ['3本',      '2本',      '4本',        '1本'] },
-  { q: '人間の体の水分量は約？',          choices: ['60%',      '40%',      '80%',        '30%'] },
-  { q: 'ビールの主な原料は？',            choices: ['大麦麦芽', '米',       '小麦',       'トウモロコシ'] },
-  { q: '月は地球から約何万km？',          choices: ['38万km',   '15万km',   '100万km',    '50万km'] },
-  { q: 'π(パイ)の近似値は？',           choices: ['3.14',     '2.72',     '1.41',       '3.16'] },
-  { q: '将棋の駒は何種類？',             choices: ['8種類',    '6種類',    '10種類',     '12種類'] },
-  { q: '味覚の基本は何種類？',            choices: ['5種類',    '4種類',    '3種類',      '6種類'] },
-  { q: '赤ちゃんの骨の数は大人より？',    choices: ['多い',     '少ない',   '同じ',       '2倍'] },
-  { q: '日本の国旗の色は？',             choices: ['白と赤',   '赤と青',   '白のみ',     '赤のみ'] },
-  { q: 'アルコール度数が最も高いのは？',   choices: ['ウォッカ', 'ビール',   '日本酒',     'ワイン'] },
-  { q: '1オクターブは何音？',            choices: ['8音',      '7音',      '12音',       '5音'] },
-  { q: '富士山があるのは？',             choices: ['静岡・山梨','長野・静岡','山梨のみ',   '静岡のみ'] },
-  { q: '地球から一番近い恒星は？',        choices: ['太陽',     '北極星',   'シリウス',   'ベガ'] },
-  { q: '三角形の内角の和は？',           choices: ['180°',    '360°',    '90°',        '270°'] },
-  { q: 'DNA の塩基は何種類？',           choices: ['4種類',    '3種類',    '5種類',      '6種類'] },
-  { q: '光の速さは約？',                 choices: ['30万km/s', '3万km/s',  '300万km/s',  '3000km/s'] },
-  { q: '日本の都道府県は何個？',          choices: ['47',       '46',       '48',         '50'] },
+  // 科学・自然
+  { q: '元素記号「Au」は何？',                  choices: ['金',           '銀',         '銅',           '鉄'] },
+  { q: '元素記号「Hg」は何？',                  choices: ['水銀',         '水素',        '鉛',           'ヘリウム'] },
+  { q: 'ダイヤモンドのモース硬度は？',            choices: ['10',          '8',          '6',             '9'] },
+  { q: '光の速さは約？',                        choices: ['30万km/s',    '3万km/s',    '300万km/s',     '3000km/s'] },
+  { q: '音速は約何m/s？（常温）',               choices: ['343m/s',      '150m/s',     '700m/s',        '1200m/s'] },
+  { q: 'DNA の塩基は何種類？',                  choices: ['4種類',        '3種類',      '5種類',         '6種類'] },
+  { q: 'ヒトの染色体は何本？',                  choices: ['46本',         '44本',       '48本',          '23本'] },
+  { q: '宇宙の年齢は約？',                      choices: ['138億年',      '46億年',     '500億年',       '13億年'] },
+  { q: '地球の赤道の全周は約？',                 choices: ['4万km',        '8万km',      '2万km',         '10万km'] },
+  { q: '太陽系で一番大きい惑星は？',             choices: ['木星',         '土星',       '天王星',        '海王星'] },
+  { q: '絶対零度は何℃？',                      choices: ['−273℃',       '−100℃',     '0℃',           '−459℃'] },
+  { q: '原子番号1の元素は？',                   choices: ['水素',         'ヘリウム',   'リチウム',      '炭素'] },
+  { q: '1モルは約何個？',                       choices: ['6.02×10²³',   '6.02×10²¹', '6.02×10²⁵',   '9.11×10²³'] },
+  // 地理・歴史
+  { q: '日本で一番深い湖は？',                  choices: ['田沢湖',       '琵琶湖',     '支笏湖',        '洞爺湖'] },
+  { q: '世界最深の湖は？',                      choices: ['バイカル湖',   '琵琶湖',     'カスピ海',      'タンガニーカ湖'] },
+  { q: '第二次世界大戦が終わった年は？',          choices: ['1945年',      '1943年',     '1939年',        '1950年'] },
+  { q: 'ロシアの首都は？',                      choices: ['モスクワ',     'サンクトペテルブルク','ノボシビルスク','カザン'] },
+  { q: 'ブラジルの首都は？（罠）',              choices: ['ブラジリア',   'リオデジャネイロ','サンパウロ', 'サルバドール'] },
+  { q: 'オーストラリアの首都は？（罠）',         choices: ['キャンベラ',   'シドニー',   'メルボルン',    'ブリスベン'] },
+  { q: '万里の長城がある国は？',                choices: ['中国',         'モンゴル',   '韓国',          'カザフスタン'] },
+  // 数学・論理
+  { q: '√2 の近似値は？',                      choices: ['1.414',        '1.732',      '2.236',         '1.618'] },
+  { q: '√3 の近似値は？',                      choices: ['1.732',        '1.414',      '2.236',         '1.618'] },
+  { q: 'e（自然対数の底）の近似値は？',          choices: ['2.718',        '3.141',      '1.618',         '2.302'] },
+  { q: '黄金比は約？',                          choices: ['1.618',        '1.414',      '1.732',         '2.718'] },
+  { q: '素数でないのはどれ？',                  choices: ['91',           '97',         '89',            '83'] },
+  { q: '四色定理が証明されたのは何年？',          choices: ['1976年',      '1900年',     '2000年',        '1952年'] },
+  // 文化・芸術
+  { q: '「モナリザ」はどこに飾られている？',      choices: ['ルーブル美術館','大英博物館', 'メトロポリタン', 'プラド美術館'] },
+  { q: '「吾輩は猫である」の著者は？',           choices: ['夏目漱石',     '芥川龍之介', '太宰治',        '森鴎外'] },
+  { q: '「マクベス」を書いたのは？',             choices: ['シェイクスピア','チョーサー', 'ミルトン',      'ダンテ'] },
+  { q: 'ベートーベンの「第九」は交響曲第何番？',  choices: ['9番',         '5番',        '7番',           '6番'] },
+  { q: '漢字「薔薇」の読み方は？',              choices: ['バラ',         'キク',       'アジサイ',      'スミレ'] },
+  // スポーツ・雑学
+  { q: 'サッカーボールの五角形は何枚？',         choices: ['12枚',         '6枚',        '20枚',          '8枚'] },
+  { q: 'オリンピックの輪は何色？',              choices: ['5色',          '4色',        '6色',           '3色'] },
+  { q: '将棋の駒は何種類？',                   choices: ['8種類',         '6種類',      '10種類',        '12種類'] },
+  { q: '月面に最初に降り立った人は？',           choices: ['ニール・アームストロング','バズ・オルドリン','ユーリ・ガガーリン','ジョン・グレン'] },
+  { q: '血液型は全部で何種類（ABO式）？',       choices: ['4種類',         '3種類',      '5種類',         '6種類'] },
+  { q: '味覚の基本は何種類？',                 choices: ['5種類',          '4種類',      '3種類',         '6種類'] },
+  { q: 'ヒトの正常体温は約？',                 choices: ['36.5℃',         '35.0℃',     '38.0℃',        '37.5℃'] },
+  // トリッキー
+  { q: '「卵」を英語で？',                     choices: ['egg',           'ham',        'yolk',          'bird'] },
+  { q: '日本の都道府県は何個？',               choices: ['47',             '46',         '48',            '50'] },
+  { q: 'π × 2 の近似値は？',                 choices: ['6.28',           '3.14',       '9.42',          '12.57'] },
+  { q: '光が1年で進む距離（光年）は約？',       choices: ['9.46兆km',      '1億km',      '100兆km',       '9460km'] },
 ];
 
 function setupQuiz() {
